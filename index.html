@@ -743,4 +743,601 @@
                 <a href="https://www.facebook.com/share/1K2zt3WhYN/" target="_blank" class="facebook" title="فيس بوك">
                     <i class="fab fa-facebook"></i>
                 </a>
-                <a href="#" id="resetChatBtn" title="محادثة جديدة" s
+                <a href="#" id="resetChatBtn" title="محادثة جديدة" style="color:#8892b0; font-size:20px;">
+                    <i class="fas fa-rotate-right"></i>
+                </a>
+            </div>
+        </div>
+
+        <div class="messages-area" id="messagesContainer"></div>
+
+        <div class="quick-actions">
+            <button onclick="startNewOrder()"><i class="fas fa-plus-circle"></i> طلب تصميم</button>
+            <button onclick="getDesignTips()"><i class="fas fa-lightbulb"></i> نصائح</button>
+            <button onclick="showPortfolio()"><i class="fas fa-images"></i> المعرض</button>
+        </div>
+
+        <div class="input-area">
+            <div class="input-container">
+                <input type="text" id="userInput" placeholder="اكتب رسالتك..." autofocus>
+                <button id="sendBtn" aria-label="إرسال"><i class="fas fa-paper-plane"></i></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== لوحة التحكم ========== -->
+    <div class="dashboard-wrapper" id="dashboardWrapper">
+        <div class="dashboard-header">
+            <h2><i class="fas fa-chart-simple"></i> لوحة التحكم</h2>
+            <span class="badge"><i class="fas fa-circle" style="color:#4ade80; font-size:8px;"></i> مباشر</span>
+        </div>
+
+        <div class="stats-grid" id="statsGrid">
+            <div class="stat-card"><div class="number" id="totalOrders">0</div><div class="label">📋 الكل</div></div>
+            <div class="stat-card"><div class="number" id="newOrders">0</div><div class="label">🆕 جديد</div></div>
+            <div class="stat-card"><div class="number" id="inProgress">0</div><div class="label">⚙️ قيد التنفيذ</div></div>
+            <div class="stat-card"><div class="number" id="doneOrders">0</div><div class="label">✅ منتهي</div></div>
+        </div>
+
+        <div class="filter-buttons" id="filterButtons">
+            <button class="active" data-filter="all">الكل</button>
+            <button data-filter="جديد">🆕 جديد</button>
+            <button data-filter="قيد التنفيذ">⚙️ قيد التنفيذ</button>
+            <button data-filter="تحت المراجعة">🔍 مراجعة</button>
+            <button data-filter="منتهي">✅ منتهي</button>
+        </div>
+
+        <div class="orders-list" id="ordersList">
+            <!-- يتم تعبئتها بواسطة JS -->
+        </div>
+    </div>
+</div>
+
+<!-- إشعار -->
+<div class="notification" id="notification">
+    <div class="title">🔔 طلب جديد!</div>
+    <div id="notificationText">تم استلام طلب تصميم</div>
+</div>
+
+<script>
+    // ============================================================
+    // ========== النظام المتكامل (شات + لوحة تحكم) ==========
+    // ============================================================
+
+    // -------- العناصر --------
+    const messagesContainer = document.getElementById('messagesContainer');
+    const userInput = document.getElementById('userInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const resetBtn = document.getElementById('resetChatBtn');
+    const ordersList = document.getElementById('ordersList');
+
+    // -------- متغيرات الشات --------
+    let isWaiting = false;
+    let orderStep = 'idle';
+    let currentOrder = {};
+
+    // -------- API Key (من الـ curl) --------
+    const API_KEY = 'AQ.Ab8RN6IYkn7BbLlUK1MPdq5RoN0pXp6jzkYwwvls8iVv8c2RSQ';
+    const API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent';
+
+    // ============================================================
+    // ========== دوال الشات ==========
+    // ============================================================
+
+    // إضافة رسالة مع تأثير الكتابة التدريجية
+    function appendMessageWithTyping(text, sender, callback) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${sender}`;
+
+        const avatar = document.createElement('div');
+        avatar.className = 'avatar';
+        avatar.innerHTML = sender === 'bot' ? '<i class="fas fa-robot"></i>' : '<i class="fas fa-user"></i>';
+
+        const bubble = document.createElement('div');
+        bubble.className = 'bubble';
+
+        const contentWrapper = document.createElement('div');
+        contentWrapper.className = 'bubble-content';
+        bubble.appendChild(contentWrapper);
+
+        // أزرار الإجراءات (نسخ)
+        const actionsDiv = document.createElement('div');
+        actionsDiv.className = 'bubble-actions';
+        const copyBtn = document.createElement('button');
+        copyBtn.innerHTML = '<i class="fas fa-copy"></i> نسخ';
+        copyBtn.onclick = function() {
+            const textToCopy = contentWrapper.textContent.trim();
+            navigator.clipboard.writeText(textToCopy).then(() => {
+                copyBtn.innerHTML = '<i class="fas fa-check"></i> تم النسخ';
+                setTimeout(() => { copyBtn.innerHTML = '<i class="fas fa-copy"></i> نسخ'; }, 2000);
+            }).catch(() => {
+                // fallback
+                const range = document.createRange();
+                range.selectNode(contentWrapper);
+                window.getSelection().removeAllRanges();
+                window.getSelection().addRange(range);
+                document.execCommand('copy');
+                copyBtn.innerHTML = '<i class="fas fa-check"></i> تم النسخ';
+                setTimeout(() => { copyBtn.innerHTML = '<i class="fas fa-copy"></i> نسخ'; }, 2000);
+            });
+        };
+        actionsDiv.appendChild(copyBtn);
+
+        // الطابع الزمني
+        const timeSpan = document.createElement('span');
+        timeSpan.className = 'timestamp';
+        const now = new Date();
+        timeSpan.textContent = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+
+        bubble.appendChild(actionsDiv);
+        bubble.appendChild(timeSpan);
+
+        messageDiv.appendChild(avatar);
+        messageDiv.appendChild(bubble);
+        messagesContainer.appendChild(messageDiv);
+
+        // تأثير الكتابة التدريجية
+        const fullText = text;
+        let index = 0;
+        contentWrapper.innerHTML = '';
+
+        function typeChar() {
+            if (index < fullText.length) {
+                const char = fullText[index];
+                if (char === '\n') {
+                    contentWrapper.innerHTML += '<br>';
+                } else {
+                    contentWrapper.innerHTML += char;
+                }
+                index++;
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                setTimeout(typeChar, 15 + Math.random() * 20);
+            } else {
+                // انتهى الكتابة
+                if (callback) callback();
+            }
+        }
+
+        typeChar();
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    // إضافة رسالة عادية (بدون تأثير)
+    function appendMessage(text, sender, timestamp = null) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${sender}`;
+
+        const avatar = document.createElement('div');
+        avatar.className = 'avatar';
+        avatar.innerHTML = sender === 'bot' ? '<i class="fas fa-robot"></i>' : '<i class="fas fa-user"></i>';
+
+        const bubble = document.createElement('div');
+        bubble.className = 'bubble';
+
+        const contentWrapper = document.createElement('div');
+        contentWrapper.className = 'bubble-content';
+        const lines = text.split('\n');
+        lines.forEach((line, i) => {
+            if (line.trim() === '') {
+                if (i < lines.length - 1) contentWrapper.innerHTML += '<br>';
+                return;
+            }
+            const p = document.createElement('p');
+            p.innerHTML = line;
+            contentWrapper.appendChild(p);
+        });
+
+        bubble.appendChild(contentWrapper);
+
+        // أزرار الإجراءات
+        const actionsDiv = document.createElement('div');
+        actionsDiv.className = 'bubble-actions';
+        const copyBtn = document.createElement('button');
+        copyBtn.innerHTML = '<i class="fas fa-copy"></i> نسخ';
+        copyBtn.onclick = function() {
+            const textToCopy = contentWrapper.textContent.trim();
+            navigator.clipboard.writeText(textToCopy).then(() => {
+                copyBtn.innerHTML = '<i class="fas fa-check"></i> تم النسخ';
+                setTimeout(() => { copyBtn.innerHTML = '<i class="fas fa-copy"></i> نسخ'; }, 2000);
+            }).catch(() => {
+                const range = document.createRange();
+                range.selectNode(contentWrapper);
+                window.getSelection().removeAllRanges();
+                window.getSelection().addRange(range);
+                document.execCommand('copy');
+                copyBtn.innerHTML = '<i class="fas fa-check"></i> تم النسخ';
+                setTimeout(() => { copyBtn.innerHTML = '<i class="fas fa-copy"></i> نسخ'; }, 2000);
+            });
+        };
+        actionsDiv.appendChild(copyBtn);
+        bubble.appendChild(actionsDiv);
+
+        const timeSpan = document.createElement('span');
+        timeSpan.className = 'timestamp';
+        if (timestamp) {
+            timeSpan.textContent = timestamp;
+        } else {
+            const now = new Date();
+            timeSpan.textContent = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+        }
+        bubble.appendChild(timeSpan);
+
+        messageDiv.appendChild(avatar);
+        messageDiv.appendChild(bubble);
+        messagesContainer.appendChild(messageDiv);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    // مؤشر الكتابة
+    function showTyping() {
+        const typingDiv = document.createElement('div');
+        typingDiv.className = 'message bot';
+        typingDiv.id = 'typingIndicator';
+        const avatar = document.createElement('div');
+        avatar.className = 'avatar';
+        avatar.innerHTML = '<i class="fas fa-robot"></i>';
+        const indicator = document.createElement('div');
+        indicator.className = 'typing-indicator';
+        indicator.innerHTML = '<span></span><span></span><span></span>';
+        typingDiv.appendChild(avatar);
+        typingDiv.appendChild(indicator);
+        messagesContainer.appendChild(typingDiv);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    function hideTyping() {
+        const typing = document.getElementById('typingIndicator');
+        if (typing) typing.remove();
+    }
+
+    // استدعاء Gemini API
+    async function fetchGeminiResponse(userText) {
+        const requestBody = {
+            contents: [{ parts: [{ text: userText }] }]
+        };
+
+        try {
+            const response = await fetch(API_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-goog-api-key': API_KEY
+                },
+                body: JSON.stringify(requestBody)
+            });
+
+            if (!response.ok) {
+                let errorMsg = `خطأ ${response.status}`;
+                try {
+                    const errData = await response.json();
+                    if (errData.error && errData.error.message) {
+                        errorMsg = errData.error.message;
+                    }
+                } catch (_) {}
+                throw new Error(errorMsg);
+            }
+
+            const data = await response.json();
+            if (data.candidates && data.candidates.length > 0) {
+                const candidate = data.candidates[0];
+                if (candidate.content && candidate.content.parts && candidate.content.parts.length > 0) {
+                    return candidate.content.parts[0].text || 'عذراً، لم أستطع توليد رد.';
+                }
+            }
+            return 'عذراً، لم أحصل على رد مناسب. حاول مجدداً.';
+        } catch (error) {
+            console.error('خطأ في الاتصال بـ Gemini:', error);
+            return `⚠️ حدث خطأ: ${error.message || 'يرجى التحقق من الاتصال.'}`;
+        }
+    }
+
+    // -------- نظام الطلبات --------
+    function startNewOrder() {
+        if (orderStep !== 'idle') {
+            appendMessage('⚠️ لديك طلب قيد الإدخال، أكمل أو ألغِ الطلب.', 'bot');
+            return;
+        }
+
+        orderStep = 'type';
+        currentOrder = { date: new Date().toLocaleString() };
+
+        appendMessage('📝 مرحباً! هساعدك تطلب تصميم احترافي.\n\n✏️ **اختر نوع التصميم:**\n• لوجو\n• بوستر\n• هوية بصرية\n• منشورات سوشيال ميديا\n• غلاف كتاب\n• غير ذلك', 'bot');
+    }
+
+    function handleOrderInput(text) {
+        switch(orderStep) {
+            case 'type':
+                currentOrder.type = text;
+                appendMessage('🎨 **ما هي الألوان المفضلة؟**\n(اكتب الألوان أو أرسل صورة مرجعية)', 'bot');
+                orderStep = 'colors';
+                break;
+
+            case 'colors':
+                currentOrder.colors = text;
+                appendMessage('✏️ **اكتب النص المطلوب:**\n(اسم الشركة، الشعار، العنوان، أو أي نص)', 'bot');
+                orderStep = 'texts';
+                break;
+
+            case 'texts':
+                currentOrder.texts = text;
+                appendMessage('📱 **اترك رقم هاتفك للتواصل:**\n(سيتم التواصل خلال 24 ساعة)', 'bot');
+                orderStep = 'phone';
+                break;
+
+            case 'phone':
+                currentOrder.phone = text;
+                appendMessage('📝 **أي تفاصيل إضافية؟**\n(مثل: حجم التصميم، عدد الصفحات، أي مرجع)', 'bot');
+                orderStep = 'extra';
+                break;
+
+            case 'extra':
+                currentOrder.extra = text;
+                submitOrder(currentOrder);
+                orderStep = 'idle';
+                break;
+        }
+    }
+
+    function submitOrder(order) {
+        const orderId = 'HP-' + Date.now().toString().slice(-6);
+        order.orderId = orderId;
+        order.status = 'جديد';
+
+        // حفظ في LocalStorage
+        let orders = JSON.parse(localStorage.getItem('helioraOrders') || '[]');
+        orders.push(order);
+        localStorage.setItem('helioraOrders', JSON.stringify(orders));
+
+        // عرض ملخص
+        const summary = `✅ **تم استلام طلبك بنجاح!** 💛\n\n📋 **رقم الطلب:** ${orderId}\n📌 **النوع:** ${order.type}\n🎨 **الألوان:** ${order.colors}\n✏️ **النص:** ${order.texts}\n📱 **الهاتف:** ${order.phone}\n📝 **تفاصيل إضافية:** ${order.extra || 'لا يوجد'}\n\n📅 **التاريخ:** ${order.date}\n\nسأتصل بك خلال 24 ساعة للبدء في التصميم.`;
+        appendMessage(summary, 'bot');
+
+        // إشعار للوحة التحكم
+        showNotification('🔔 طلب جديد!', `${order.type} - ${order.phone}`);
+        renderOrders();
+
+        // تشغيل صوت
+        try {
+            const audio = new Audio('data:audio/wav;base64,UklGRnoAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoAAACBhYqFhYWFiYaGhYWFhYmFhoWFhYWFhoaFhYWFhoaFhYWFhYaFhYWFhoaFhYWFhoaFhYWFhoaFhYWFhoaFhYWFhoaFhYWFhoaFhYWFhoaFhYWFhoaFhYWFhoaFhYWFhoaFhYWFhoaFhYWFhoaFhYWFhoaFhYWFhQ==');
+            audio.play();
+        } catch(e) {}
+    }
+
+    function getDesignTips() {
+        const tips = [
+            '🎨 **نصيحة الألوان:** استخدم عجلة الألوان لاختيار ألوان متكاملة (Complementary, Analogous)',
+            '✏️ **نصيحة الخطوط:** لا تستخدم أكثر من 3 أنواع خطوط في التصميم الواحد',
+            '📐 **نصيحة التنسيق:** طبق قاعدة الأثلاث (Rule of Thirds) لتوزيع العناصر',
+            '💡 **نصيحة الإلهام:** تصفح Behance و Dribbble يومياً للاطلاع على أحدث التصاميم',
+            '🖼️ **نصيحة الصور:** استخدم صور عالية الجودة من Unsplash أو Pexels'
+        ];
+        const randomTip = tips[Math.floor(Math.random() * tips.length)];
+        appendMessage(randomTip, 'bot');
+    }
+
+    function showPortfolio() {
+        appendMessage('🖼️ **معرض أعمال Heliora Pixel**\n\nيمكنك مشاهدة أعمالي السابقة على:\n🔗 [Instagram](https://instagram.com/heliorapixel)\n🔗 [Behance](https://behance.net/heliorapixel)\n\n📌 هل لديك مشروع معين تريد استشارة فيه؟', 'bot');
+    }
+
+    // -------- إرسال الرسالة --------
+    async function handleSend() {
+        const text = userInput.value.trim();
+        if (!text || isWaiting) return;
+
+        // إذا كان في وضع الطلب
+        if (orderStep !== 'idle') {
+            appendMessage(text, 'user');
+            userInput.value = '';
+            handleOrderInput(text);
+            return;
+        }
+
+        isWaiting = true;
+        sendBtn.disabled = true;
+        userInput.disabled = true;
+
+        appendMessage(text, 'user');
+        userInput.value = '';
+
+        showTyping();
+
+        const botReply = await fetchGeminiResponse(text);
+
+        hideTyping();
+
+        // عرض الرد مع تأثير الكتابة
+        appendMessageWithTyping(botReply, 'bot', () => {
+            isWaiting = false;
+            sendBtn.disabled = false;
+            userInput.disabled = false;
+            userInput.focus();
+        });
+    }
+
+    // -------- إعادة تعيين --------
+    function resetChat() {
+        if (isWaiting) return;
+        // مسح كل الرسائل
+        messagesContainer.innerHTML = '';
+        // إضافة رسالة ترحيب
+        const welcome = '🌟 مرحباً بك في **Heliora Pixel**! 💛\n\nأنا مساعدك الذكي لطلب التصاميم الاحترافية.\n\n📝 **ماذا تريد؟**\n• اضغط "طلب تصميم" لبدء طلبك\n• اسألني عن نصائح التصميم\n• شاهد معرض الأعمال\n\nأنا هنا لخدمتك 24/7 🚀';
+        appendMessage(welcome, 'bot');
+        orderStep = 'idle';
+        currentOrder = {};
+        userInput.value = '';
+        userInput.focus();
+    }
+
+    // ============================================================
+    // ========== دوال لوحة التحكم ==========
+    // ============================================================
+
+    let orders = [];
+    let currentFilter = 'all';
+
+    function loadOrders() {
+        orders = JSON.parse(localStorage.getItem('helioraOrders') || '[]');
+        renderOrders();
+        updateStats();
+    }
+
+    function renderOrders() {
+        const filtered = currentFilter === 'all'
+            ? orders
+            : orders.filter(o => o.status === currentFilter);
+
+        if (filtered.length === 0) {
+            ordersList.innerHTML = `<div style="text-align:center; color:#8892b0; padding:30px;">
+                <i class="fas fa-inbox" style="font-size:30px; display:block; margin-bottom:10px;"></i>
+                لا توجد طلبات
+            </div>`;
+            return;
+        }
+
+        ordersList.innerHTML = filtered.map(order => `
+            <div class="order-item">
+                <div class="row">
+                    <span class="order-id">#${order.orderId}</span>
+                    <span class="order-type">${order.type || 'غير محدد'}</span>
+                    <span class="order-phone"><i class="fas fa-phone"></i> ${order.phone || 'غير متوفر'}</span>
+                    <span class="order-status status-${getStatusClass(order.status)}">${order.status}</span>
+                </div>
+                <div class="row" style="margin-top:6px;">
+                    <span style="font-size:12px; color:#64748b;">${order.date || ''}</span>
+                    <div class="order-actions">
+                        <button onclick="viewOrder('${order.orderId}')"><i class="fas fa-eye"></i></button>
+                        <button onclick="updateStatus('${order.orderId}','قيد التنفيذ')"><i class="fas fa-play"></i></button>
+                        <button onclick="updateStatus('${order.orderId}','تحت المراجعة')"><i class="fas fa-search"></i></button>
+                        <button onclick="updateStatus('${order.orderId}','منتهي')"><i class="fas fa-check"></i></button>
+                        <button class="danger" onclick="deleteOrder('${order.orderId}')"><i class="fas fa-trash"></i></button>
+                    </div>
+                </div>
+                <div class="order-details" id="details-${order.orderId}">
+                    <div class="detail-line"><strong>الألوان:</strong> ${order.colors || 'غير محدد'}</div>
+                    <div class="detail-line"><strong>النص:</strong> ${order.texts || 'غير محدد'}</div>
+                    ${order.extra ? `<div class="detail-line"><strong>تفاصيل إضافية:</strong> ${order.extra}</div>` : ''}
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function getStatusClass(status) {
+        const map = { 'جديد':'new', 'قيد التنفيذ':'progress', 'تحت المراجعة':'review', 'منتهي':'done' };
+        return map[status] || 'new';
+    }
+
+    function updateStats() {
+        const total = orders.length;
+        const newOrders = orders.filter(o => o.status === 'جديد').length;
+        const inProgress = orders.filter(o => o.status === 'قيد التنفيذ').length;
+        const done = orders.filter(o => o.status === 'منتهي').length;
+
+        document.getElementById('totalOrders').textContent = total;
+        document.getElementById('newOrders').textContent = newOrders;
+        document.getElementById('inProgress').textContent = inProgress;
+        document.getElementById('doneOrders').textContent = done;
+    }
+
+    function viewOrder(orderId) {
+        const details = document.getElementById('details-' + orderId);
+        if (details) {
+            details.classList.toggle('show');
+        }
+    }
+
+    function updateStatus(orderId, newStatus) {
+        const order = orders.find(o => o.orderId === orderId);
+        if (!order) return;
+        order.status = newStatus;
+        localStorage.setItem('helioraOrders', JSON.stringify(orders));
+        renderOrders();
+        updateStats();
+        showNotification('✅ تم التحديث', `الطلب #${orderId} أصبح "${newStatus}"`);
+    }
+
+    function deleteOrder(orderId) {
+        if (!confirm('هل أنت متأكد من حذف هذا الطلب؟')) return;
+        orders = orders.filter(o => o.orderId !== orderId);
+        localStorage.setItem('helioraOrders', JSON.stringify(orders));
+        renderOrders();
+        updateStats();
+        showNotification('🗑️ تم الحذف', `تم حذف الطلب #${orderId}`);
+    }
+
+    // -------- الإشعارات --------
+    function showNotification(title, text) {
+        const notif = document.getElementById('notification');
+        document.getElementById('notificationText').textContent = text;
+        notif.querySelector('.title').innerHTML = title;
+        notif.classList.add('show');
+
+        clearTimeout(notif._timeout);
+        notif._timeout = setTimeout(() => {
+            notif.classList.remove('show');
+        }, 5000);
+    }
+
+    // -------- مراقبة الطلبات الجديدة --------
+    function listenForNewOrders() {
+        let lastCount = orders.length;
+        setInterval(() => {
+            const stored = JSON.parse(localStorage.getItem('helioraOrders') || '[]');
+            if (stored.length > lastCount) {
+                const newOrder = stored[stored.length - 1];
+                showNotification('🔔 طلب جديد!', `${newOrder.type} - ${newOrder.phone}`);
+                orders = stored;
+                renderOrders();
+                updateStats();
+                lastCount = stored.length;
+            } else {
+                orders = stored;
+                lastCount = stored.length;
+            }
+        }, 2000);
+    }
+
+    // ============================================================
+    // ========== الأحداث ==========
+    // ============================================================
+
+    sendBtn.addEventListener('click', handleSend);
+    userInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            handleSend();
+        }
+    });
+
+    resetBtn.addEventListener('click', resetChat);
+
+    // أزرار التصفية
+    document.querySelectorAll('#filterButtons button').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('#filterButtons button').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            currentFilter = this.dataset.filter;
+            renderOrders();
+        });
+    });
+
+    // ============================================================
+    // ========== التحميل الأولي ==========
+    // ============================================================
+
+    // رسالة ترحيب
+    setTimeout(() => {
+        const welcome = '🌟 مرحباً بك في **Heliora Pixel**! 💛\n\nأنا مساعدك الذكي لطلب التصاميم الاحترافية.\n\n📝 **ماذا تريد؟**\n• اضغط "طلب تصميم" لبدء طلبك\n• اسألني عن نصائح التصميم\n• شاهد معرض الأعمال\n\nأنا هنا لخدمتك 24/7 🚀';
+        appendMessage(welcome, 'bot');
+    }, 200);
+
+    // تحميل الطلبات
+    loadOrders();
+    listenForNewOrders();
+
+    // التركيز
+    userInput.focus();
+
+    console.log('🚀 Heliora Pixel شغال 100%');
+</script>
+</body>
+</html>
